@@ -1,0 +1,6 @@
+Flask
+Flask-SQLAlchemy
+psycopg2
+Faker
+avro-python3
+avro_validator
