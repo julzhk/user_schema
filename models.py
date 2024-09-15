@@ -20,6 +20,7 @@ class Schema(db.Model):
     name = db.Column(db.String(150), nullable=False)
     version = db.Column(db.Integer, nullable=False, default=1)
     data = db.Column(JSON, nullable=True)  # JSONB field
+    rules = db.Column(db.String(2048), nullable=True, default='')
 
     def __repr__(self):
         return f'<Schema {self.name}>'
