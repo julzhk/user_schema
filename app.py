@@ -1,8 +1,7 @@
 from flask import Flask
 
-from avro_schema import schema
 from config import Config
-from models import db, Der, Schema
+from models import db, Der
 from models import Schema as SchemaModel
 from faker import Faker
 import json
@@ -18,6 +17,13 @@ db.init_app(app)
 
 
 def generate_schema():
+    """
+    Called once to initialize the database with a schema.
+    This schema checks if there's a 'Person' record with various mandatory characteristics
+    and an age greater than 18.
+
+    See the AVRO documentation for more.
+    """
     schema = SchemaModel(
         name="Person",
         rules="age > 18",
@@ -38,11 +44,19 @@ def generate_schema():
 
 
 def create_tables():
+    """
+    initialize the database
+    :return:
+    """
     with app.app_context():
         db.create_all()
 
 
 def generate_der():
+    """ we're making a fake person here.
+    The person is valid against the schema;
+    alter this to see how to handle invalid data.
+    The data may have an age field < 18 so may not pass the validation """
     der = Der(
         is_deleted=False,
         name=faker.name(),
@@ -57,22 +71,27 @@ def generate_der():
 
 
 @app.before_request
-def create_tables():
+def init_tables():
+    # make sure we're ready;
+    # create the tables and add a schema
     db.create_all()
-
+    try:
+        get_current_schema_record()
+    except ValueError:
+        schema = generate_schema()
+        db.session.add(schema)
 
 @app.route('/')
 def hello_world():
+    """ This is a simple route that generates a fake person """
     der = fake_some_data()
     return f'{der.name}, {der.data}'
 
 
-@app.route('/add_der/')
 def fake_some_data():
-    # schema = generate_schema()
-    # db.session.add(schema)
+    """ generate a person, validate it, and save it"""
     der = generate_der()
-    validated_against_version: int = validate_der_against_schema(der.data)
+    validated_against_version: int = validate_der(der.data)
     der.validation_schema = validated_against_version
     db.session.add(der)
     db.session.commit()
@@ -80,27 +99,35 @@ def fake_some_data():
 
 
 def load_current_schema():
-    schema_record = get_current_schema_record()
     # Load the schema from the database and return it
+    schema_record = get_current_schema_record()
     schema_json = json.dumps(schema_record.data)
-    return schema_json, schema_record.version
+    return schema_json
 
 
 def get_current_schema_record():
+    # get the latest schema
     schema_record = SchemaModel.query.order_by(SchemaModel.version.desc()).first()
     if not schema_record:
         raise ValueError("No schema found in the database")
     return schema_record
 
 
-def validate_der_against_schema(der_data: dict[str, any]):
-    schema, schema_version = load_current_schema()
+def validate_der(der_data: dict[str, any]):
+    """validate the data against the schema
+    and against the rules"""
+    validate_against_schema(der_data)
+    validate_der_against_rules(der_data)
+    return get_current_schema_record().version
+
+
+def validate_against_schema(der_data):
+    """ validates or raises an error """
+    schema = load_current_schema()
     schema = Schema(schema)
     parsed_schema = schema.parse()
     validated = parsed_schema.validate(der_data)
     print(validated)
-    validate_der_against_rules(der_data)
-    return schema_version
 
 
 def validate_der_against_rules(der_data: dict[str, any]):
@@ -111,6 +138,6 @@ def validate_der_against_rules(der_data: dict[str, any]):
 
 
 if __name__ == '__main__':
-    create_tables()  # Create tables
+    init_tables()  # Create tables
 
     app.run(debug=True)
