@@ -11,6 +11,9 @@ import rule_engine
 faker = Faker()
 
 app = Flask(__name__)
+logger = app.logger
+logger.setLevel('DEBUG')
+logger.debug('Starting the app')
 app.config.from_object(Config)
 
 db.init_app(app)
@@ -74,23 +77,28 @@ def generate_der():
 def init_tables():
     # make sure we're ready;
     # create the tables and add a schema
-    db.create_all()
+    logger.debug('Creating tables')
+    create_tables()
     try:
         get_current_schema_record()
     except ValueError:
         schema = generate_schema()
         db.session.add(schema)
+        db.session.commit()
+
 
 @app.route('/')
 def hello_world():
     """ This is a simple route that generates a fake person """
-    der = fake_some_data()
+    der = save_and_validate_der_data()
     return f'{der.name}, {der.data}'
 
 
-def fake_some_data():
-    """ generate a person, validate it, and save it"""
-    der = generate_der()
+def save_and_validate_der_data(der: dict = None):
+    """ take a person data or generate it,
+    validate it, and save it"""
+    if der is None:
+        der = generate_der()
     validated_against_version: int = validate_der(der.data)
     der.validation_schema = validated_against_version
     db.session.add(der)
@@ -107,7 +115,7 @@ def load_current_schema():
 
 def get_current_schema_record():
     # get the latest schema
-    schema_record = SchemaModel.query.order_by(SchemaModel.version.desc()).first()
+    schema_record = SchemaModel.query.order_by(SchemaModel.id.desc()).first()
     if not schema_record:
         raise ValueError("No schema found in the database")
     return schema_record
@@ -118,7 +126,7 @@ def validate_der(der_data: dict[str, any]):
     and against the rules"""
     validate_against_schema(der_data)
     validate_der_against_rules(der_data)
-    return get_current_schema_record().version
+    return get_current_schema_record().id
 
 
 def validate_against_schema(der_data):
@@ -138,6 +146,4 @@ def validate_der_against_rules(der_data: dict[str, any]):
 
 
 if __name__ == '__main__':
-    init_tables()  # Create tables
-
     app.run(debug=True)
